@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>EditGram — Моя библиотека</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            background: #121212;
+            color: #fff;
+            margin: 0;
+            padding: 30px;
+        }
+        h1 {
+            color: #00ffcc;
+            font-size: 24px;
+            margin-bottom: 20px;
+        }
+        .filters {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 25px;
+            flex-wrap: wrap;
+        }
+        .filter-btn {
+            background: #1e1e1e;
+            border: 1px solid #333;
+            color: #aaa;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: bold;
+            transition: all 0.2s;
+        }
+        .filter-btn:hover {
+            border-color: #00ffcc;
+            color: #fff;
+        }
+        .filter-btn.active {
+            background: #00ffcc;
+            color: #000;
+            border-color: #00ffcc;
+        }
+        .player-container {
+            width: 100%;
+            max-width: 640px;
+            background: #1e1e1e;
+            border: 1px solid #333;
+            border-radius: 8px;
+            overflow: hidden;
+            margin-bottom: 30px;
+            aspect-ratio: 16 / 9;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #666;
+        }
+        .player-container iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 20px;
+        }
+        .card {
+            background: #1e1e1e;
+            border: 1px solid #333;
+            border-radius: 8px;
+            padding: 16px;
+            box-sizing: border-box;
+            cursor: pointer;
+            position: relative;
+            transition: border-color 0.2s, transform 0.2s;
+        }
+        .card:hover {
+            border-color: #00ffcc;
+            transform: translateY(-2px);
+        }
+        .category {
+            display: inline-block;
+            background: #00ffcc;
+            color: #000;
+            font-size: 11px;
+            font-weight: bold;
+            padding: 3px 8px;
+            border-radius: 4px;
+            margin-bottom: 10px;
+        }
+        .time {
+            font-size: 14px;
+            color: #aaa;
+            margin-bottom: 10px;
+        }
+        .url {
+            font-size: 12px;
+            color: #00ffcc;
+            word-break: break-all;
+        }
+        /* Кнопка удаления на карточке */
+        .delete-btn {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            background: transparent;
+            border: none;
+            color: #666;
+            font-size: 16px;
+            cursor: pointer;
+            padding: 4px;
+            transition: color 0.2s;
+        }
+        .delete-btn:hover {
+            color: #ff4d4d;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>EditGram Clipper — Библиотека клипов</h1>
+    
+    <div class="player-container" id="playerWrapper">
+        <span id="playerPlaceholder">Выберите клип из библиотеки для просмотра</span>
+    </div>
+
+    <div class="filters" id="filtersContainer">
+        <button class="filter-btn active" data-category="all">Все</button>
+    </div>
+
+    <div class="grid" id="clipsGrid"></div>
+
+    <script>
+        let allClips = [];
+        let currentFilter = 'all';
+
+        function getYouTubeId(url) {
+            const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+            const match = url.match(regExp);
+            return (match && match[2].length === 11) ? match[2] : null;
+        }
+
+        async function deleteClip(id, event) {
+            event.stopPropagation(); // Чтобы клик не открывал плеер
+            if (!confirm('Удалить этот клип из библиотеки?')) return;
+
+            try {
+                const response = await fetch(`http://127.0.0.1:8000/api/clips/${id}`, {
+                    method: 'DELETE'
+                });
+                const result = await response.json();
+                
+                if (result.status === 'success') {
+                    // Перезагружаем список
+                    loadClips();
+                } else {
+                    alert('Не удалось удалить клип.');
+                }
+            } catch (e) {
+                console.error('Ошибка при удалении:', e);
+            }
+        }
+
+        function renderClips() {
+            const grid = document.getElementById('clipsGrid');
+            grid.innerHTML = '';
+
+            const filteredClips = currentFilter === 'all' 
+                ? allClips 
+                : allClips.filter(clip => clip.category === currentFilter);
+
+            if (filteredClips.length === 0) {
+                grid.innerHTML = '<p style="color: #666;">В этой категории пока нет клипов.</p>';
+                return;
+            }
+
+            filteredClips.forEach(clip => {
+                const card = document.createElement('div');
+                card.className = 'card';
+                
+                const startMin = Math.floor(clip.startSeconds / 60).toString().padStart(2, '0');
+                const startSec = (clip.startSeconds % 60).toString().padStart(2, '0');
+                const endMin = Math.floor(clip.endSeconds / 60).toString().padStart(2, '0');
+                const endSec = (clip.endSeconds % 60).toString().padStart(2, '0');
+
+                card.innerHTML = `
+                    <button class="delete-btn" title="Удалить клип">✕</button>
+                    <div class="category">${clip.category}</div>
+                    <div class="time">⏱ ${startMin}:${startSec} — ${endMin}:${endSec}</div>
+                    <div class="url">${clip.url}</div>
+                `;
+
+                // Обработчик удаления
+                card.querySelector('.delete-btn').addEventListener('click', (e) => deleteClip(clip.id, e));
+
+                // Обработчик воспроизведения
+                card.addEventListener('click', () => {
+                    const videoId = getYouTubeId(clip.url);
+                    if (!videoId) {
+                        alert('Не удалось распознать ID видео из ссылки.');
+                        return;
+                    }
+
+                    const playerWrapper = document.getElementById('playerWrapper');
+                    playerWrapper.innerHTML = `
+                        <iframe src="https://www.youtube.com/embed/${videoId}?start=${clip.startSeconds}&end=${clip.endSeconds}&autoplay=1" 
+                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+                                allowfullscreen>
+                        </iframe>
+                    `;
+                });
+
+                grid.appendChild(card);
+            });
+        }
+
+        function updateFilters() {
+            const filtersContainer = document.getElementById('filtersContainer');
+            const categories = [...new Set(allClips.map(clip => clip.category))];
+
+            filtersContainer.innerHTML = `<button class="filter-btn ${currentFilter === 'all' ? 'active' : ''}" data-category="all">Все</button>`;
+
+            categories.forEach(cat => {
+                const btn = document.createElement('button');
+                btn.className = `filter-btn ${currentFilter === cat ? 'active' : ''}`;
+                btn.dataset.category = cat;
+                btn.textContent = cat;
+                filtersContainer.appendChild(btn);
+            });
+
+            document.querySelectorAll('.filter-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+                    e.target.classList.add('active');
+                    currentFilter = e.target.dataset.category;
+                    renderClips();
+                });
+            });
+        }
+
+        async function loadClips() {
+            try {
+                const response = await fetch('http://127.0.0.1:8000/api/clips');
+                const data = await response.json();
+                
+                allClips = data.clips;
+                updateFilters();
+                renderClips();
+            } catch (e) {
+                console.error('Ошибка загрузки клипов:', e);
+            }
+        }
+
+        loadClips();
+    </script>
+
+</body>
+</html>
